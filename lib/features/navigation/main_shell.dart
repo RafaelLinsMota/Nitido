@@ -4,6 +4,9 @@ import 'package:nitido/features/home/home_screen.dart';
 import 'package:nitido/features/bills/bills_screen.dart';
 import 'package:nitido/features/charts/charts_screen.dart';
 import 'package:nitido/features/profile/profile_screen.dart';
+import 'package:nitido/features/budgets/budgets_screen.dart';
+import 'package:nitido/features/savings/savings_goals_screen.dart';
+import 'package:nitido/features/wallets/wallets_screen.dart';
 
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
@@ -19,6 +22,9 @@ class _MainShellState extends State<MainShell> {
     HomeScreen(),
     BillsScreen(),
     ChartsScreen(),
+    WalletsScreen(),
+    BudgetsScreen(),
+    SavingsGoalsScreen(),
     ProfileScreen(),
   ];
 
@@ -26,6 +32,9 @@ class _MainShellState extends State<MainShell> {
     Icons.home,
     Icons.receipt_long,
     Icons.pie_chart,
+    Icons.account_balance_wallet,
+    Icons.credit_card,
+    Icons.savings,
     Icons.person,
   ];
 
@@ -43,7 +52,7 @@ class _MainShellState extends State<MainShell> {
               currentIndex: currentIndex,
               onTap: (index) => setState(() => currentIndex = index),
               icons: icons,
-              labels: ['Início', 'Contas', 'Gráficos', 'Perfil'],
+              labels: ['Início', 'Contas', 'Gráficos', 'Carteiras', 'Orçamentos', 'Metas', 'Perfil'],
             ),
           ),
         ],

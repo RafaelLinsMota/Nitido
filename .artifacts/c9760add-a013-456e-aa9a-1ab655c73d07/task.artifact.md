@@ -1,0 +1,3 @@
+- [ ] Recriar pastas de plataforma do Flutter (`windows`, `android`, etc.)
+- [ ] Verificar criação dos diretórios
+- [ ] Fornecer comandos para iniciar o emulador `And01`

@@ -4,6 +4,7 @@
 build/
 .flutter-plugins
 .flutter-plugins-dependencies
+pubspec.lock
 
 # IDE
 .idea/
@@ -29,12 +30,22 @@ ios/Flutter/Flutter.framework
 ios/Flutter/Flutter.podspec
 ios/Runner.xcworkspace/xcshareddata/iosds_Store
 
+# Web
+web/
+
+# Windows
+windows/
+
 # Misc
 *.log
 *.pyc
 *.swp
 .env
 .env.local
+.metadata
 
 # Supabase
 # Don't commit your Supabase keys!
+
+# Telas (design references)
+Telas/

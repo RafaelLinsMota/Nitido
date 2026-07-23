@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../supabase/supabase_config.dart';
 import '../models/models.dart';
+import '../services/wallets_service.dart';
 
 final authStateProvider = StreamProvider<AuthState>((ref) {
   return SupabaseConfig.auth.onAuthStateChange;
@@ -22,6 +23,31 @@ final userProfileProvider = FutureProvider<UserProfile?>((ref) async {
       .single();
 
   return UserProfile.fromJson(response);
+});
+
+final walletsProvider = FutureProvider<List<Wallet>>((ref) async {
+  final user = ref.watch(currentUserProvider);
+  if (user == null) return [];
+  return WalletsService.getWallets();
+});
+
+final selectedWalletIdProvider = StateProvider<String?>((ref) => null);
+
+final selectedWalletProvider = Provider<Wallet?>((ref) {
+  final wallets = ref.watch(walletsProvider);
+  final selectedId = ref.watch(selectedWalletIdProvider);
+
+  return wallets.when(
+    data: (list) {
+      if (selectedId != null) {
+        return list.where((w) => w.id == selectedId).firstOrNull;
+      }
+      return list.where((w) => w.isDefault).firstOrNull ??
+          (list.isNotEmpty ? list.first : null);
+    },
+    loading: () => null,
+    error: (_, __) => null,
+  );
 });
 
 final incomesProvider = FutureProvider<List<Income>>((ref) async {
@@ -65,9 +91,17 @@ final billsProvider = FutureProvider<List<Bill>>((ref) async {
 
 final billsForMonthProvider = Provider.family<List<Bill>, DateTime>((ref, month) {
   final bills = ref.watch(billsProvider);
+  final selectedWallet = ref.watch(selectedWalletProvider);
+
   return bills.when(
     data: (list) => list.where((bill) {
-      return bill.dueDate.year == month.year && bill.dueDate.month == month.month;
+      final matchesMonth =
+          bill.dueDate.year == month.year && bill.dueDate.month == month.month;
+      if (selectedWallet == null) return matchesMonth;
+      return matchesMonth && bill.groupId == null;
+    }).where((bill) {
+      if (selectedWallet == null) return true;
+      return true;
     }).toList(),
     loading: () => [],
     error: (_, __) => [],
@@ -77,25 +111,35 @@ final billsForMonthProvider = Provider.family<List<Bill>, DateTime>((ref, month)
 final monthlySummaryProvider = Provider.family<MonthlySummary, DateTime>((ref, month) {
   final bills = ref.watch(billsForMonthProvider(month));
   final incomes = ref.watch(incomesProvider);
+  final selectedWallet = ref.watch(selectedWalletProvider);
 
   final monthIncomes = incomes.when(
     data: (list) => list.where((inc) {
-      return inc.receivedAt.year == month.year && inc.receivedAt.month == month.month;
+      final matchesMonth =
+          inc.receivedAt.year == month.year && inc.receivedAt.month == month.month;
+      if (selectedWallet == null) return matchesMonth;
+      return matchesMonth && inc.walletId == selectedWallet.id;
     }).toList(),
     loading: () => <Income>[],
     error: (_, __) => <Income>[],
   );
 
-  final totalIncome = monthIncomes.fold<double>(0, (sum, inc) => sum + inc.amount);
-  final totalExpenses = bills.fold<double>(0, (sum, bill) => sum + bill.amount);
-  final paidExpenses = bills
+  final filteredBills = selectedWallet != null
+      ? bills.where((b) => b.groupId == null).toList()
+      : bills;
+
+  final totalIncome =
+      monthIncomes.fold<double>(0, (sum, inc) => sum + inc.amount);
+  final totalExpenses =
+      filteredBills.fold<double>(0, (sum, bill) => sum + bill.amount);
+  final paidExpenses = filteredBills
       .where((b) => b.status == BillStatus.paga)
       .fold<double>(0, (sum, bill) => sum + bill.amount);
-  final pendingExpenses = bills
+  final pendingExpenses = filteredBills
       .where((b) => b.status != BillStatus.paga)
       .fold<double>(0, (sum, bill) => sum + bill.amount);
-  final pendingCount = bills.where((b) => b.status != BillStatus.paga).length;
-  final overdueCount = bills.where((b) => b.isOverdue).length;
+  final pendingCount = filteredBills.where((b) => b.status != BillStatus.paga).length;
+  final overdueCount = filteredBills.where((b) => b.isOverdue).length;
 
   return MonthlySummary(
     totalIncome: totalIncome,

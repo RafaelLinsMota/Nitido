@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:nitido/core/theme/app_theme.dart';
 import 'package:nitido/core/services/auth_service.dart';
+import 'package:nitido/core/supabase/supabase_config.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
   const AuthScreen({super.key});
@@ -29,6 +31,65 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     passwordController.dispose();
     confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleForgotPassword() async {
+    final email = emailController.text.trim();
+    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
+
+    if (email.isEmpty || !emailRegex.hasMatch(email)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Insira um email válido no campo acima')),
+      );
+      return;
+    }
+
+    setState(() => isLoading = true);
+    try {
+      await AuthService.resetPassword(email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Email de recuperação enviado! Verifique sua caixa de entrada.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _handleBiometricLogin() async {
+    final auth = LocalAuthentication();
+    try {
+      final authenticated = await auth.authenticate(
+        localizedReason: 'Use sua biometria para entrar no Nítido',
+        options: const AuthenticationOptions(useErrorDialogs: true),
+      );
+
+      if (!mounted) return;
+
+      if (authenticated) {
+        final session = SupabaseConfig.auth.currentSession;
+        if (session != null) {
+          Navigator.of(context).pushReplacementNamed('/home');
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Nenhuma sessão ativa. Faça login primeiro.')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro na biometria: $e')),
+        );
+      }
+    }
   }
 
   Future<void> _handleSubmit() async {
@@ -60,7 +121,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
 
     setState(() => isLoading = false);
 
-    if (!result.isSuccess && mounted) {
+    if (result.isSuccess && mounted) {
+      Navigator.of(context).pushReplacementNamed('/home');
+    } else if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(result.error ?? 'Erro ao autenticar')),
       );
@@ -77,31 +140,24 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             left: -60,
             width: 220,
             height: 220,
-            child: Container(
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.violet,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.violet.withValues(alpha: 0.45),
+                ),
               ),
-              foreground: Decoration(
-                shape: BoxShape.circle,
-                color: AppColors.violet.withValues(alpha: 0.45),
-              ),
-            ),
           ),
           Positioned(
             bottom: -40,
             right: -60,
             width: 240,
             height: 240,
-            child: Container(
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.teal.withValues(alpha: 0.4),
+                ),
               ),
-              foreground: Decoration(
-                shape: BoxShape.circle,
-                color: AppColors.teal.withValues(alpha: 0.4),
-              ),
-            ),
           ),
           SafeArea(
             child: SingleChildScrollView(
@@ -152,7 +208,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               ),
             ],
           ),
-          child: const Icon(Icons.aperture, size: 32, color: Colors.white),
+          child: const Icon(Icons.blur_on, size: 32, color: Colors.white),
         ),
         const SizedBox(height: 16),
         const Text(
@@ -263,7 +319,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
-              onPressed: () {},
+              onPressed: _handleForgotPassword,
               child: const Text(
                 'Esqueci minha senha',
                 style: TextStyle(
@@ -377,7 +433,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     return SizedBox(
       width: double.infinity,
       child: OutlinedButton.icon(
-        onPressed: () {},
+        onPressed: _handleBiometricLogin,
         icon: const Icon(Icons.fingerprint, color: AppColors.positive, size: 17),
         label: const Text(
           'Entrar com biometria',

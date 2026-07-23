@@ -13,6 +13,7 @@ class BillsService {
     required BillType type,
     required DateTime dueDate,
     int? totalInstallments,
+    String? walletId,
   }) async {
     if (type == BillType.parcelada && totalInstallments != null && totalInstallments > 1) {
       await _createInstallmentBills(
@@ -22,6 +23,7 @@ class BillsService {
         amount: amount,
         totalInstallments: totalInstallments,
         startDate: dueDate,
+        walletId: walletId,
       );
     } else {
       await SupabaseConfig.client.from('bills').insert({
@@ -33,6 +35,7 @@ class BillsService {
         'type': type.name,
         'due_date': dueDate.toIso8601String(),
         'status': 'pendente',
+        'wallet_id': walletId,
         'created_at': DateTime.now().toIso8601String(),
       });
     }
@@ -45,6 +48,7 @@ class BillsService {
     required double amount,
     required int totalInstallments,
     required DateTime startDate,
+    String? walletId,
   }) async {
     final groupId = _uuid.v4();
     final bills = <Map<String, dynamic>>[];
@@ -68,6 +72,7 @@ class BillsService {
         'installment_current': i + 1,
         'installment_total': totalInstallments,
         'group_id': groupId,
+        'wallet_id': walletId,
         'created_at': DateTime.now().toIso8601String(),
       });
     }

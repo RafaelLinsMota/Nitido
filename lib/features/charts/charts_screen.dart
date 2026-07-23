@@ -7,6 +7,12 @@ import 'package:nitido/core/providers/providers.dart';
 import 'package:nitido/core/models/models.dart';
 import 'package:nitido/shared/widgets/glass_widgets.dart';
 
+Color _parseColor(String hex) {
+  hex = hex.replaceFirst('#', '');
+  if (hex.length == 6) hex = 'FF$hex';
+  return Color(int.parse(hex, radix: 16));
+}
+
 class ChartsScreen extends ConsumerStatefulWidget {
   const ChartsScreen({super.key});
 
@@ -28,16 +34,62 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
   Widget build(BuildContext context) {
     final summary = ref.watch(monthlySummaryProvider(currentMonth));
     final bills = ref.watch(billsForMonthProvider(currentMonth));
+    final allBills = ref.watch(billsProvider);
+    final categories = ref.watch(categoriesProvider);
 
     final totalExpenses = summary.totalExpenses;
 
-    final categories = [
-      _CategoryData('Moradia', 35, 1246, const Color(0xFFA78BFA)),
-      _CategoryData('Alimentação', 24, 854, const Color(0xFFFB923C)),
-      _CategoryData('Transporte', 15, 534, const Color(0xFF38BDF8)),
-      _CategoryData('Lazer', 14, 498, const Color(0xFFF472B6)),
-      _CategoryData('Outros', 12, 427, const Color(0xFF94A3B8)),
-    ];
+    final categoryMap = <String, Category>{};
+    categories.whenData((list) {
+      for (final c in list) {
+        categoryMap[c.id] = c;
+      }
+    });
+
+    final categoryTotals = <String, double>{};
+    for (final bill in bills) {
+      categoryTotals[bill.categoryId] =
+          (categoryTotals[bill.categoryId] ?? 0) + bill.amount;
+    }
+
+    final catData = categoryTotals.entries.map((e) {
+      final cat = categoryMap[e.key];
+      final pct = totalExpenses > 0
+          ? ((e.value / totalExpenses) * 100).round()
+          : 0;
+      final color = cat != null ? _parseColor(cat.color) : AppColors.textSecondary;
+      return _CategoryData(
+        cat?.name ?? 'Sem categoria',
+        pct,
+        e.value,
+        color,
+      );
+    }).toList()
+      ..sort((a, b) => b.amount.compareTo(a.amount));
+
+    final monthlyTotals = <String, double>{};
+    final monthlyOrder = <String>[];
+    final allBillsList = allBills.valueOrNull ?? [];
+    final sortedBills = List<Bill>.from(allBillsList)
+      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    for (final bill in sortedBills) {
+      final key = DateFormat('MMM', 'pt_BR').format(bill.dueDate);
+      monthlyTotals[key] = (monthlyTotals[key] ?? 0) + bill.amount;
+      if (!monthlyOrder.contains(key)) monthlyOrder.add(key);
+    }
+
+    final topCategory = catData.isNotEmpty ? catData.first.name : null;
+    DateFormat inputFormat = DateFormat('MMM', 'pt_BR');
+    final previousMonthKey = monthlyOrder.isNotEmpty
+        ? inputFormat.format(
+            DateTime(currentMonth.year, currentMonth.month - 1),
+          )
+        : null;
+    final previousMonthTotal = previousMonthKey != null
+        ? monthlyTotals[previousMonthKey] ?? 0
+        : 0.0;
+    final diff = totalExpenses - previousMonthTotal;
+    final isPositive = diff <= 0;
 
     final ranking = bills
         .where((b) => b.status != BillStatus.paga)
@@ -60,13 +112,13 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
                       const SizedBox(height: 10),
                       _buildMonthSelector(),
                       const SizedBox(height: 16),
-                      _buildTotalCard(totalExpenses),
+                      _buildTotalCard(totalExpenses, diff, isPositive),
                       const SizedBox(height: 14),
-                      _buildInsights(),
+                      _buildInsights(topCategory, diff, isPositive),
                       const SizedBox(height: 22),
-                      _buildEvolutionSection(),
+                      _buildEvolutionSection(monthlyTotals),
                       const SizedBox(height: 22),
-                      _buildDonutSection(categories, totalExpenses),
+                      _buildDonutSection(catData, totalExpenses),
                       const SizedBox(height: 22),
                       _buildRankingSection(topRanking),
                     ],
@@ -152,7 +204,9 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
     );
   }
 
-  Widget _buildTotalCard(double totalExpenses) {
+  Widget _buildTotalCard(double totalExpenses, double diff, bool isPositive) {
+    final diffIcon = isPositive ? Icons.trending_down : Icons.trending_up;
+    final diffLabel = isPositive ? '-${diff.abs()}%' : '+${diff.abs()}%';
     return GlassCard(
       padding: const EdgeInsets.all(22),
       child: Column(
@@ -175,12 +229,12 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
           const SizedBox(height: 6),
           Row(
             children: [
-              Icon(Icons.trending_down, size: 14, color: AppColors.positive),
+              Icon(diffIcon, size: 14, color: isPositive ? AppColors.positive : AppColors.negative),
               const SizedBox(width: 4),
               Text(
-                '-4%',
+                diffLabel,
                 style: TextStyle(
-                  color: AppColors.positive,
+                  color: isPositive ? AppColors.positive : AppColors.negative,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
                 ),
@@ -197,44 +251,35 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
     );
   }
 
-  Widget _buildInsights() {
+  Widget _buildInsights(String? topCategory, double diff, bool isPositive) {
+    final vsText = isPositive
+        ? 'Você gastou R\$ ${diff.abs().toStringAsFixed(2)} a menos do que no mês anterior.'
+        : 'Você gastou R\$ ${diff.abs().toStringAsFixed(2)} a mais do que no mês anterior.';
+    final topText = topCategory != null
+        ? '$topCategory é sua maior categoria este mês.'
+        : 'Nenhum gasto registrado este mês.';
+
     return Column(
       children: [
         _InsightCard(
           icon: Icons.home,
-          color: const Color(0xFFA78BFA),
-          text: 'Moradia é sua maior categoria este mês, consumindo 35% do total gasto.',
+          color: isPositive ? AppColors.positive : AppColors.negative,
+          text: topText,
         ),
         const SizedBox(height: 10),
         _InsightCard(
-          icon: Icons.trending_down,
-          color: AppColors.positive,
-          text: 'Você gastou R\$ 140,50 a menos do que em junho.',
+          icon: isPositive ? Icons.trending_down : Icons.trending_up,
+          color: isPositive ? AppColors.positive : AppColors.negative,
+          text: vsText,
         ),
       ],
     );
   }
 
-  Widget _buildEvolutionSection() {
-    final monthsData = [
-      {'label': 'Ago', 'value': 2980.0},
-      {'label': 'Set', 'value': 3120.0},
-      {'label': 'Out', 'value': 3400.0},
-      {'label': 'Nov', 'value': 3850.0},
-      {'label': 'Dez', 'value': 4200.0},
-      {'label': 'Jan', 'value': 3050.0},
-      {'label': 'Fev', 'value': 2890.0},
-      {'label': 'Mar', 'value': 3310.0},
-      {'label': 'Abr', 'value': 3180.0},
-      {'label': 'Mai', 'value': 3400.0},
-      {'label': 'Jun', 'value': 3700.0},
-      {'label': 'Jul', 'value': 3559.5},
-    ];
-
-    final displayedMonths = monthsData.sublist(monthsData.length - period);
-    final maxMonthValue = displayedMonths
-        .map((m) => m['value'] as double)
-        .reduce((a, b) => a > b ? a : b);
+  Widget _buildEvolutionSection(Map<String, double> monthlyTotals) {
+    final entries = monthlyTotals.entries.toList();
+    final entriesList = entries.sublist(entries.length > period ? entries.length - period : 0);
+    final maxMonthValue = entriesList.fold(0.0, (max, e) => e.value > max ? e.value : max);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -311,15 +356,15 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
                       showTitles: true,
                       getTitlesWidget: (value, meta) {
                         final index = value.toInt();
-                        if (index < 0 || index >= displayedMonths.length) {
+                        if (index < 0 || index >= entriesList.length) {
                           return const SizedBox.shrink();
                         }
-                        final m = displayedMonths[index];
-                        final isLast = index == displayedMonths.length - 1;
+                        final m = entriesList[index];
+                        final isLast = index == entriesList.length - 1;
                         return Padding(
                           padding: const EdgeInsets.only(top: 6),
                           child: Text(
-                            m['label'] as String,
+                            m.key,
                             style: TextStyle(
                               color: isLast
                                   ? AppColors.textPrimary
@@ -336,10 +381,10 @@ class _ChartsScreenState extends ConsumerState<ChartsScreen> {
                 ),
                 gridData: const FlGridData(show: false),
                 borderData: FlBorderData(show: false),
-                barGroups: List.generate(displayedMonths.length, (index) {
-                  final m = displayedMonths[index];
-                  final value = m['value'] as double;
-                  final isLast = index == displayedMonths.length - 1;
+                barGroups: List.generate(entriesList.length, (index) {
+                  final m = entriesList[index];
+                  final value = m.value;
+                  final isLast = index == entriesList.length - 1;
                   return BarChartGroupData(
                     x: index,
                     barRods: [

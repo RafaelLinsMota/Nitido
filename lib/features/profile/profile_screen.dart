@@ -1,15 +1,257 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'package:nitido/core/theme/app_theme.dart';
 import 'package:nitido/core/providers/providers.dart';
 import 'package:nitido/core/services/auth_service.dart';
+import 'package:nitido/core/services/report_service.dart';
+import 'package:nitido/core/supabase/supabase_config.dart';
 import 'package:nitido/shared/widgets/glass_widgets.dart';
 
-class ProfileScreen extends ConsumerWidget {
+class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends ConsumerState<ProfileScreen> {
+  final nameController = TextEditingController();
+  final emailController = TextEditingController();
+  bool isSavingProfile = false;
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    emailController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveProfile() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final name = nameController.text.trim();
+    if (name.isEmpty) return;
+
+    setState(() => isSavingProfile = true);
+    try {
+      await SupabaseConfig.client
+          .from('users')
+          .update({'name': name}).eq('id', user.id);
+      ref.invalidate(userProfileProvider);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isSavingProfile = false);
+    }
+  }
+
+  void _showEditProfile(String currentName, String currentEmail) {
+    nameController.text = currentName;
+    emailController.text = currentEmail;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Container(
+            margin: const EdgeInsets.all(20),
+            child: GlassCard(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Editar perfil',
+                    style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const _FieldLabel('Nome'),
+                  _buildField(controller: nameController),
+                  const SizedBox(height: 14),
+                  const _FieldLabel('Email'),
+                  _buildField(controller: emailController, enabled: false),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: isSavingProfile ? null : _saveProfile,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.teal,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: isSavingProfile
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Salvar',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCategories() {
+    final categoriesAsync = ref.read(categoriesProvider);
+    categoriesAsync.whenData((cats) {
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => DraggableScrollableSheet(
+          initialChildSize: 0.7,
+          maxChildSize: 0.9,
+          minChildSize: 0.4,
+          builder: (_, scrollController) => Container(
+            margin: const EdgeInsets.all(20),
+            child: GlassCard(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Categorias',
+                    style: TextStyle(
+                      fontFamily: 'Manrope',
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ListView.separated(
+                      controller: scrollController,
+                      itemCount: cats.length,
+                      separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        color: Colors.white.withValues(alpha: 0.08),
+                      ),
+                      itemBuilder: (_, i) {
+                        final cat = cats[i];
+                        return ListTile(
+                          leading: Icon(
+                            _categoryIcon(cat.icon),
+                            color: _parseColor(cat.color),
+                          ),
+                          title: Text(
+                            cat.name,
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 14,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  void _showNotificationsPlaceholder() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Configuração de notificações em breve')),
+    );
+  }
+
+  void _exportReport() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final now = DateTime.now();
+    final monthStr = DateFormat('MMMM yyyy', 'pt_BR').format(now);
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1A2E),
+        title: const Text('Exportar Relatório', style: TextStyle(color: AppColors.textPrimary)),
+        content: Text(
+          'Deseja exportar o relatório de $monthStr em PDF?',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Exportar', style: TextStyle(color: AppColors.teal)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Gerando relatório...')),
+    );
+
+    try {
+      final file = await ReportService.generateMonthlyReport(
+        userId: user.id,
+        month: now,
+      );
+      await ReportService.shareReport(file);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Relatório gerado com sucesso!')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao gerar relatório: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(userProfileProvider);
 
     return Scaffold(
@@ -31,7 +273,16 @@ class ProfileScreen extends ConsumerWidget {
                 ),
                 const SizedBox(height: 20),
                 user.when(
-                  data: (profile) => _buildUserInfo(profile?.name ?? 'Usuário', profile?.email ?? ''),
+                  data: (profile) => GestureDetector(
+                    onTap: () => _showEditProfile(
+                      profile?.name ?? 'Usuário',
+                      profile?.email ?? '',
+                    ),
+                    child: _buildUserInfo(
+                      profile?.name ?? 'Usuário',
+                      profile?.email ?? '',
+                    ),
+                  ),
                   loading: () => const Center(
                     child: CircularProgressIndicator(color: AppColors.teal),
                   ),
@@ -44,20 +295,44 @@ class ProfileScreen extends ConsumerWidget {
                 _buildSection(
                   title: 'Conta',
                   items: [
-                    _MenuItem(icon: Icons.person_outline, label: 'Editar perfil'),
-                    _MenuItem(icon: Icons.category_outlined, label: 'Categorias personalizadas'),
-                    _MenuItem(icon: Icons.notifications_outlined, label: 'Notificações'),
+                    _MenuItem(
+                      icon: Icons.person_outline,
+                      label: 'Editar perfil',
+                      onTap: () {
+                        final p = user.valueOrNull;
+                        if (p != null) _showEditProfile(p.name, p.email);
+                      },
+                    ),
+                    _MenuItem(
+                      icon: Icons.category_outlined,
+                      label: 'Categorias personalizadas',
+                      onTap: _showCategories,
+                    ),
+                    _MenuItem(
+                      icon: Icons.notifications_outlined,
+                      label: 'Notificações',
+                      onTap: _showNotificationsPlaceholder,
+                    ),
+                    _MenuItem(
+                      icon: Icons.picture_as_pdf_outlined,
+                      label: 'Exportar relatório',
+                      onTap: _exportReport,
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 _buildSection(
                   title: 'Aparência',
                   items: [
-                    _MenuItem(icon: Icons.dark_mode_outlined, label: 'Modo escuro', trailing: Switch(
-                      value: true,
-                      onChanged: (_) {},
-                      activeColor: AppColors.positive,
-                    )),
+                    _MenuItem(
+                      icon: Icons.dark_mode_outlined,
+                      label: 'Modo escuro',
+                      trailing: Switch(
+                        value: true,
+                        onChanged: (_) {},
+                        activeColor: AppColors.positive,
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -99,6 +374,32 @@ class ProfileScreen extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildField({required TextEditingController controller, bool enabled = true}) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        color: Colors.white.withValues(alpha: 0.06),
+      ),
+      child: TextField(
+        controller: controller,
+        enabled: enabled,
+        style: const TextStyle(color: AppColors.textPrimary),
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.teal),
+          ),
+        ),
       ),
     );
   }
@@ -183,7 +484,7 @@ class ProfileScreen extends ConsumerWidget {
               ],
             ),
           ),
-          Icon(Icons.chevron_right, color: AppColors.textSecondary),
+          const Icon(Icons.chevron_right, color: AppColors.textSecondary),
         ],
       ),
     );
@@ -227,41 +528,88 @@ class ProfileScreen extends ConsumerWidget {
       ],
     );
   }
+
+  IconData _categoryIcon(String iconName) {
+    switch (iconName) {
+      case 'home': return Icons.home;
+      case 'shopping_cart': return Icons.shopping_cart;
+      case 'directions_car': return Icons.directions_car;
+      case 'flight': return Icons.flight;
+      case 'restaurant': return Icons.restaurant;
+      case 'fitness_center': return Icons.fitness_center;
+      case 'school': return Icons.school;
+      case 'health_and_safety': return Icons.health_and_safety;
+      case 'savings': return Icons.savings;
+      case 'more_horiz': return Icons.more_horiz;
+      default: return Icons.category;
+    }
+  }
+
+  Color _parseColor(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
+  }
 }
 
 class _MenuItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final Widget? trailing;
+  final VoidCallback? onTap;
 
   const _MenuItem({
     required this.icon,
     required this.label,
     this.trailing,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: AppColors.textSecondary),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 14,
+    return GestureDetector(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: AppColors.textSecondary),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                ),
               ),
             ),
-          ),
-          if (trailing != null)
-            trailing!
-          else
-            Icon(Icons.chevron_right, size: 16, color: AppColors.textSecondary),
-        ],
+            if (trailing != null)
+              trailing!
+            else
+              const Icon(Icons.chevron_right, size: 16, color: AppColors.textSecondary),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FieldLabel extends StatelessWidget {
+  final String label;
+  const _FieldLabel(this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.textSecondary,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

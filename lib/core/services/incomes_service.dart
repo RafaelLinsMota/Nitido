@@ -1,6 +1,5 @@
 import 'package:uuid/uuid.dart';
 import '../supabase/supabase_config.dart';
-import '../models/models.dart';
 
 class IncomesService {
   static const _uuid = Uuid();
@@ -12,6 +11,7 @@ class IncomesService {
     required bool recurring,
     int? recurrenceDay,
     required DateTime receivedAt,
+    String? walletId,
   }) async {
     await SupabaseConfig.client.from('incomes').insert({
       'id': _uuid.v4(),
@@ -21,6 +21,7 @@ class IncomesService {
       'recurring': recurring,
       'recurrence_day': recurrenceDay,
       'received_at': receivedAt.toIso8601String(),
+      'wallet_id': walletId,
       'created_at': DateTime.now().toIso8601String(),
     });
   }

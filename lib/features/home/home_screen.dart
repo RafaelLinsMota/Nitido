@@ -1,10 +1,13 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:nitido/core/theme/app_theme.dart';
 import 'package:nitido/core/providers/providers.dart';
 import 'package:nitido/core/models/models.dart';
+import 'package:nitido/core/services/incomes_service.dart';
+import 'package:nitido/core/services/bills_service.dart';
+import 'package:nitido/core/services/budgets_service.dart';
 import 'package:nitido/shared/widgets/glass_widgets.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -26,16 +29,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final summary = ref.watch(monthlySummaryProvider(currentMonth));
     final bills = ref.watch(billsForMonthProvider(currentMonth));
-    final incomes = ref.watch(incomesProvider);
-    final user = ref.watch(userProfileProvider);
-
-    final userName = user.when(
-      data: (profile) => profile?.name ?? 'Usuário',
-      loading: () => 'Usuário',
-      error: (_, __) => 'Usuário',
-    );
 
     final monthBills = bills;
     final upcomingBills = monthBills
@@ -60,13 +54,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     child: ListView(
                       padding: const EdgeInsets.fromLTRB(20, 10, 20, 160),
                       children: [
-                        _buildHeader(userName),
-                        const SizedBox(height: 18),
-                        _buildBalanceCard(summary),
+                        _buildHeader(),
                         const SizedBox(height: 14),
-                        _buildStatCards(summary),
+                        _buildWalletSelector(),
                         const SizedBox(height: 14),
-                        _buildBudgetSummary(monthBills, summary),
+                        Consumer(builder: (context, ref, _) {
+                          final summary = ref.watch(monthlySummaryProvider(currentMonth));
+                          return _buildBalanceCard(summary);
+                        }),
+                        const SizedBox(height: 14),
+                        Consumer(builder: (context, ref, _) {
+                          final summary = ref.watch(monthlySummaryProvider(currentMonth));
+                          return _buildStatCards(summary);
+                        }),
+                        const SizedBox(height: 14),
+                        Consumer(builder: (context, ref, _) {
+                          final s = ref.watch(monthlySummaryProvider(currentMonth));
+                          return _buildBudgetSummary(monthBills, s);
+                        }),
+                        const SizedBox(height: 14),
+                        Consumer(builder: (context, ref, _) {
+                          return _buildBudgetAlerts();
+                        }),
                         const SizedBox(height: 20),
                         _buildUpcomingSection(upcomingBills),
                       ],
@@ -134,31 +143,152 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildHeader(String userName) {
-    final now = DateTime.now();
-    final dateStr = DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(now);
+  Widget _buildHeader() {
+    return Consumer(builder: (context, ref, _) {
+      final user = ref.watch(userProfileProvider);
+      final userName = user.when(
+        data: (profile) => profile?.name ?? 'Usuário',
+        loading: () => 'Usuário',
+        error: (_, __) => 'Usuário',
+      );
+      final now = DateTime.now();
+      final dateStr = DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(now);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Olá, $userName',
-          style: const TextStyle(
-            fontFamily: 'Manrope',
-            fontSize: 22,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textPrimary,
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Olá, $userName',
+            style: const TextStyle(
+              fontFamily: 'Manrope',
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
           ),
-        ),
-        Text(
-          dateStr,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 13,
+          Text(
+            dateStr,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+            ),
           ),
-        ),
-      ],
-    );
+        ],
+      );
+    });
+  }
+
+  Widget _buildWalletSelector() {
+    return Consumer(builder: (context, ref, _) {
+      final wallets = ref.watch(walletsProvider);
+      final selectedWallet = ref.watch(selectedWalletProvider);
+
+      return wallets.when(
+        data: (list) {
+          if (list.isEmpty) return const SizedBox.shrink();
+
+          return SizedBox(
+            height: 36,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: list.length + 1,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, index) {
+                if (index == 0) {
+                  final isSelected = selectedWallet == null;
+                  return GestureDetector(
+                    onTap: () =>
+                        ref.read(selectedWalletIdProvider.notifier).state = null,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(14),
+                        color: isSelected
+                            ? Colors.white.withValues(alpha: 0.18)
+                            : Colors.white.withValues(alpha: 0.06),
+                        border: Border.all(
+                          color: isSelected
+                              ? Colors.white.withValues(alpha: 0.3)
+                              : Colors.white.withValues(alpha: 0.08),
+                        ),
+                      ),
+                      child: const Text(
+                        'Todas',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                final wallet = list[index - 1];
+                final isSelected = selectedWallet?.id == wallet.id;
+                final walletColor = _parseHexColor(wallet.color);
+
+                return GestureDetector(
+                  onTap: () => ref.read(selectedWalletIdProvider.notifier).state =
+                      wallet.id,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: isSelected
+                          ? walletColor.withValues(alpha: 0.25)
+                          : Colors.white.withValues(alpha: 0.06),
+                      border: Border.all(
+                        color: isSelected
+                            ? walletColor
+                            : Colors.white.withValues(alpha: 0.08),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: walletColor,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          wallet.name,
+                          style: TextStyle(
+                            color: isSelected
+                                ? AppColors.textPrimary
+                                : AppColors.textSecondary,
+                            fontSize: 12,
+                            fontWeight:
+                                isSelected ? FontWeight.w600 : FontWeight.w400,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        },
+        loading: () => const SizedBox.shrink(),
+        error: (_, __) => const SizedBox.shrink(),
+      );
+    });
+  }
+
+  Color _parseHexColor(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
   }
 
   Widget _buildBalanceCard(MonthlySummary summary) {
@@ -356,6 +486,149 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildBudgetAlerts() {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return const SizedBox.shrink();
+
+    return FutureBuilder<Map<String, Map<String, dynamic>>>(
+      future: BudgetsService.getCategorySpending(user.id, currentMonth),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) return const SizedBox.shrink();
+
+        final spending = snapshot.data!;
+        final overBudgetCategories = <String, Map<String, dynamic>>{};
+
+        for (var entry in spending.entries) {
+          final spent = entry.value['amount'] ?? 0.0;
+          final budget = entry.value['budget'] ?? 0.0;
+          if (budget > 0 && spent > budget) {
+            overBudgetCategories[entry.key] = entry.value;
+          }
+        }
+
+        if (overBudgetCategories.isEmpty) return const SizedBox.shrink();
+
+        final categories = ref.watch(categoriesProvider);
+        final categoryMap = categories.when(
+          data: (list) => {for (var c in list) c.id: c.name},
+          loading: () => <String, String>{},
+          error: (_, __) => <String, String>{},
+        );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, size: 18, color: AppColors.warning),
+                const SizedBox(width: 6),
+                const Text(
+                  'Alertas de Orçamento',
+                  style: TextStyle(
+                    fontFamily: 'Manrope',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ...overBudgetCategories.entries.map((entry) {
+              final spent = entry.value['amount'] ?? 0.0;
+              final budget = entry.value['budget'] ?? 0.0;
+              final percent = ((spent / budget) * 100).toInt();
+              final diff = spent - budget;
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: GlassCard(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Categoria: ${categoryMap[entry.key] ?? entry.key}',
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: AppColors.negative.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$percent%',
+                            style: const TextStyle(
+                              color: AppColors.negative,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: (spent / budget).clamp(0.0, 1.5),
+                        backgroundColor: Colors.white.withValues(alpha: 0.1),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          spent > budget ? AppColors.negative : AppColors.warning,
+                        ),
+                        minHeight: 6,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Gasto: ${_formatBRL(spent)}',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                        Text(
+                          'Limite: ${_formatBRL(budget)}',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Ultrapassou em ${_formatBRL(diff)}',
+                      style: const TextStyle(
+                        color: AppColors.negative,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                ),
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildUpcomingSection(List<Bill> upcomingBills) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -510,21 +783,23 @@ class _DonutPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class NewEntrySheet extends StatefulWidget {
+class NewEntrySheet extends ConsumerStatefulWidget {
   final bool isIncome;
 
   const NewEntrySheet({super.key, required this.isIncome});
 
   @override
-  State<NewEntrySheet> createState() => _NewEntrySheetState();
+  ConsumerState<NewEntrySheet> createState() => _NewEntrySheetState();
 }
 
-class _NewEntrySheetState extends State<NewEntrySheet> {
+class _NewEntrySheetState extends ConsumerState<NewEntrySheet> {
   late bool isIncome;
   String? selectedCategoryId;
+  String? selectedWalletId;
   BillType billType = BillType.fixa;
   int installments = 3;
   bool recurring = true;
+  bool isLoading = false;
   final amountController = TextEditingController(text: '0,00');
   final descriptionController = TextEditingController();
   DateTime selectedDate = DateTime.now();
@@ -537,12 +812,12 @@ class _NewEntrySheetState extends State<NewEntrySheet> {
   ];
 
   final expenseCategories = [
-    {'id': 'housing', 'name': 'Moradia', 'icon': Icons.home, 'color': const Color(0xFFA78BFA)},
-    {'id': 'food', 'name': 'Alimentação', 'icon': Icons.restaurant, 'color': const Color(0xFFFB923C)},
-    {'id': 'transport', 'name': 'Transporte', 'icon': Icons.directions_car, 'color': const Color(0xFF38BDF8)},
-    {'id': 'leisure', 'name': 'Lazer', 'icon': Icons.sports_esports, 'color': const Color(0xFFF472B6)},
-    {'id': 'health', 'name': 'Saúde', 'icon': Icons.favorite, 'color': AppColors.textSecondary},
-    {'id': 'other_expense', 'name': 'Outros', 'icon': Icons.more_horiz, 'color': AppColors.textSecondary},
+    {'id': '550e8400-e29b-41d4-a716-446655440001', 'name': 'Moradia', 'icon': Icons.home, 'color': const Color(0xFFA78BFA)},
+    {'id': '550e8400-e29b-41d4-a716-446655440002', 'name': 'Alimentação', 'icon': Icons.restaurant, 'color': const Color(0xFFFB923C)},
+    {'id': '550e8400-e29b-41d4-a716-446655440003', 'name': 'Transporte', 'icon': Icons.directions_car, 'color': const Color(0xFF38BDF8)},
+    {'id': '550e8400-e29b-41d4-a716-446655440004', 'name': 'Lazer', 'icon': Icons.sports_esports, 'color': const Color(0xFFF472B6)},
+    {'id': '550e8400-e29b-41d4-a716-446655440005', 'name': 'Saúde', 'icon': Icons.favorite, 'color': AppColors.textSecondary},
+    {'id': '550e8400-e29b-41d4-a716-446655440008', 'name': 'Outros', 'icon': Icons.more_horiz, 'color': AppColors.textSecondary},
   ];
 
   @override
@@ -988,11 +1263,14 @@ class _NewEntrySheetState extends State<NewEntrySheet> {
                   ],
                 ),
               ],
+              const SizedBox(height: 20),
+              const _FieldLabel('Carteira'),
+              _buildWalletDropdown(),
               const SizedBox(height: 28),
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: _handleSubmit,
+                  onPressed: isLoading ? null : _handleSubmit,
                   style: ElevatedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 15),
                     shape: RoundedRectangleBorder(
@@ -1010,8 +1288,17 @@ class _NewEntrySheetState extends State<NewEntrySheet> {
                     child: Container(
                       alignment: Alignment.center,
                       padding: const EdgeInsets.symmetric(vertical: 15),
-                      child: Text(
-                        isIncome ? 'Adicionar receita' : 'Adicionar conta',
+                      child: isLoading
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.background,
+                              ),
+                            )
+                          : Text(
+                              isIncome ? 'Adicionar receita' : 'Adicionar conta',
                         style: const TextStyle(
                           fontFamily: 'Manrope',
                           fontWeight: FontWeight.w700,
@@ -1029,8 +1316,133 @@ class _NewEntrySheetState extends State<NewEntrySheet> {
     );
   }
 
-  void _handleSubmit() {
-    Navigator.pop(context);
+  void _handleSubmit() async {
+    final user = ref.read(currentUserProvider);
+    if (user == null) return;
+
+    final amountText = amountController.text
+        .replaceAll('.', '')
+        .replaceAll(',', '.');
+    final amount = double.tryParse(amountText) ?? 0;
+    if (amount <= 0 || descriptionController.text.trim().isEmpty) return;
+
+    setState(() => isLoading = true);
+
+    try {
+      if (isIncome) {
+        await IncomesService.createIncome(
+          userId: user.id,
+          title: descriptionController.text.trim(),
+          amount: amount,
+          recurring: recurring,
+          recurrenceDay: recurring ? selectedDate.day : null,
+          receivedAt: selectedDate,
+          walletId: selectedWalletId,
+        );
+      } else {
+        await BillsService.createBill(
+          userId: user.id,
+          categoryId: selectedCategoryId ?? '',
+          title: descriptionController.text.trim(),
+          amount: amount,
+          type: billType,
+          dueDate: selectedDate,
+          totalInstallments: billType == BillType.parcelada ? installments : null,
+          walletId: selectedWalletId,
+        );
+      }
+
+      ref.invalidate(incomesProvider);
+      ref.invalidate(billsProvider);
+
+      if (mounted) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao salvar: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
+  }
+
+  Widget _buildWalletDropdown() {
+    final wallets = ref.watch(walletsProvider);
+
+    return wallets.when(
+      data: (list) {
+        if (list.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: Colors.white.withValues(alpha: 0.06),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: const Text(
+              'Nenhuma carteira disponível',
+              style: TextStyle(color: AppColors.textTertiary, fontSize: 13),
+            ),
+          );
+        }
+
+        final selected = selectedWalletId != null
+            ? list.firstWhere(
+                (w) => w.id == selectedWalletId,
+                orElse: () => list.first,
+              )
+            : null;
+
+        return GestureDetector(
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              builder: (_) => _WalletPickerSheet(
+                wallets: list,
+                selectedId: selectedWalletId,
+                onSelect: (id) => setState(() => selectedWalletId = id),
+              ),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              color: Colors.white.withValues(alpha: 0.06),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.account_balance_wallet,
+                  size: 16,
+                  color: AppColors.textSecondary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    selected?.name ?? 'Selecionar carteira',
+                    style: TextStyle(
+                      color: selected != null
+                          ? AppColors.textPrimary
+                          : AppColors.textTertiary,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right, size: 15, color: AppColors.textSecondary),
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
   }
 }
 
@@ -1075,5 +1487,202 @@ class _StepperButton extends StatelessWidget {
         child: Icon(icon, size: 16, color: AppColors.textPrimary),
       ),
     );
+  }
+}
+
+class _WalletPickerSheet extends StatelessWidget {
+  final List<Wallet> wallets;
+  final String? selectedId;
+  final ValueChanged<String?> onSelect;
+
+  const _WalletPickerSheet({
+    required this.wallets,
+    required this.selectedId,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.4,
+      decoration: BoxDecoration(
+        color: const Color(0xFF141024).withValues(alpha: 0.92),
+        border: Border(
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.14)),
+        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(2),
+                    color: Colors.white.withValues(alpha: 0.25),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Selecionar carteira',
+                style: TextStyle(
+                  fontFamily: 'Manrope',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  children: [
+                    GestureDetector(
+                      onTap: () {
+                        onSelect(null);
+                        Navigator.pop(context);
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          color: selectedId == null
+                              ? Colors.white.withValues(alpha: 0.16)
+                              : Colors.white.withValues(alpha: 0.04),
+                          border: Border.all(
+                            color: selectedId == null
+                                ? Colors.white.withValues(alpha: 0.3)
+                                : Colors.white.withValues(alpha: 0.08),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                color: Colors.white.withValues(alpha: 0.1),
+                              ),
+                              child: Icon(Icons.all_inclusive,
+                                  size: 18, color: AppColors.textSecondary),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'Todas as carteiras',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (selectedId == null)
+                              const Icon(Icons.check, size: 16, color: AppColors.teal),
+                          ],
+                        ),
+                      ),
+                    ),
+                    ...wallets.map((wallet) {
+                      final isSelected = selectedId == wallet.id;
+                      final walletColor = _parseHexColor(wallet.color);
+
+                      return GestureDetector(
+                        onTap: () {
+                          onSelect(wallet.id);
+                          Navigator.pop(context);
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            color: isSelected
+                                ? walletColor.withValues(alpha: 0.2)
+                                : Colors.white.withValues(alpha: 0.04),
+                            border: Border.all(
+                              color: isSelected
+                                  ? walletColor
+                                  : Colors.white.withValues(alpha: 0.08),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  color: walletColor.withValues(alpha: 0.2),
+                                ),
+                                child: Icon(_getWalletIcon(wallet.type),
+                                    size: 18, color: walletColor),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      wallet.name,
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    Text(
+                                      wallet.typeName,
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 11,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (isSelected)
+                                Icon(Icons.check, size: 16, color: walletColor),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _parseHexColor(String hex) {
+    hex = hex.replaceFirst('#', '');
+    if (hex.length == 6) hex = 'FF$hex';
+    return Color(int.parse(hex, radix: 16));
+  }
+
+  IconData _getWalletIcon(WalletType type) {
+    switch (type) {
+      case WalletType.conta_corrente:
+        return Icons.account_balance;
+      case WalletType.poupanca:
+        return Icons.savings;
+      case WalletType.carteira:
+        return Icons.account_balance_wallet;
+      case WalletType.credito:
+        return Icons.credit_card;
+    }
   }
 }

@@ -29,12 +29,15 @@ class AuthService {
       );
 
       if (response.user != null) {
-        await SupabaseConfig.client.from('users').insert({
-          'id': response.user!.id,
-          'name': name,
-          'email': email,
-          'created_at': DateTime.now().toIso8601String(),
-        });
+        try {
+          await SupabaseConfig.client.from('users').upsert({
+            'id': response.user!.id,
+            'name': name,
+            'email': email,
+          });
+        } catch (_) {
+          // Trigger já pode ter criado o registro
+        }
       }
 
       return AuthResult.success(response.user?.id);

@@ -1,6 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../../core/theme/app_theme.dart';
 
 class GlassCard extends StatelessWidget {
   final Widget child;
@@ -24,18 +24,9 @@ class GlassCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         height: height,
-        padding: padding ?? const EdgeInsets.all(14),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(borderRadius),
           border: Border.all(color: AppColors.glassBorder, width: 1),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              Colors.white.withValues(alpha: 0.12),
-              Colors.white.withValues(alpha: 0.03),
-            ],
-          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.35),
@@ -48,14 +39,29 @@ class GlassCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(borderRadius),
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-            child: Stack(
-              children: [
-                Positioned(
-                  top: 0,
-                  left: MediaQuery.of(context).size.width * 0.1,
-                  right: MediaQuery.of(context).size.width * 0.1,
-                  height: 1,
-                  child: Container(
+            child: Container(
+              padding: padding ?? const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(borderRadius),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.12),
+                    Colors.white.withValues(alpha: 0.03),
+                  ],
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    height: 1,
+                    margin: EdgeInsets.symmetric(
+                      horizontal: MediaQuery.of(context).size.width * 0.1,
+                    ),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: [
@@ -66,9 +72,9 @@ class GlassCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                ),
-                child,
-              ],
+                  child,
+                ],
+              ),
             ),
           ),
         ),
@@ -271,14 +277,18 @@ class StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      borderRadius: 20,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 15, color: color),
+          Icon(icon, size: 16, color: color),
           const SizedBox(height: 6),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppColors.textSecondary,
               fontSize: 10,
@@ -287,6 +297,8 @@ class StatCard extends StatelessWidget {
           const SizedBox(height: 2),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               fontFamily: 'Manrope',
               fontWeight: FontWeight.w700,

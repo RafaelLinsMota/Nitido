@@ -7,6 +7,7 @@ import 'package:nitido/core/providers/providers.dart';
 import 'package:nitido/core/models/models.dart';
 import 'package:nitido/core/services/bills_service.dart';
 import 'package:nitido/shared/widgets/glass_widgets.dart';
+import 'package:nitido/features/home/home_screen.dart';
 
 class BillsScreen extends ConsumerStatefulWidget {
   const BillsScreen({super.key});
@@ -18,6 +19,7 @@ class BillsScreen extends ConsumerStatefulWidget {
 class _BillsScreenState extends ConsumerState<BillsScreen> {
   BillFilter filter = BillFilter.todas;
   late DateTime currentMonth;
+  bool isFabOpen = false;
 
   @override
   void initState() {
@@ -28,7 +30,6 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
   @override
   Widget build(BuildContext context) {
     final bills = ref.watch(billsForMonthProvider(currentMonth));
-    final summary = ref.watch(monthlySummaryProvider(currentMonth));
 
     final overdue = bills.where((b) => b.isOverdue).toList();
     final pending = bills
@@ -36,6 +37,10 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
         .toList();
     final paid = bills.where((b) => b.status == BillStatus.paga).toList();
     final totalOpen = [...overdue, ...pending].fold<double>(0, (s, b) => s + b.amount);
+
+    final totalCount = bills.length;
+    final pendingCount = overdue.length + pending.length;
+    final paidCount = paid.length;
 
     List<BillListSection> sections;
     if (filter == BillFilter.pagas) {
@@ -72,7 +77,7 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
                       const SizedBox(height: 6),
                       _buildSummary(totalOpen, overdue.length + pending.length),
                       const SizedBox(height: 16),
-                      _buildFilterTabs(),
+                      _buildFilterTabs(totalCount, pendingCount, paidCount),
                       const SizedBox(height: 14),
                       _buildTip(),
                       const SizedBox(height: 4),
@@ -93,8 +98,22 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
             right: 20,
             bottom: 104,
             child: GlassFAB(
-              onPressed: () {},
-              isOpen: false,
+              onPressed: () => setState(() => isFabOpen = !isFabOpen),
+              isOpen: isFabOpen,
+              actions: [
+                GlassFABAction(
+                  icon: Icons.trending_up,
+                  label: 'Receita',
+                  color: AppColors.positive,
+                  onPressed: () => _showNewEntrySheet(isIncome: true),
+                ),
+                GlassFABAction(
+                  icon: Icons.receipt_long,
+                  label: 'Conta',
+                  color: AppColors.negative,
+                  onPressed: () => _showNewEntrySheet(isIncome: false),
+                ),
+              ],
             ),
           ),
         ],
@@ -185,26 +204,26 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
     );
   }
 
-  Widget _buildFilterTabs() {
+  Widget _buildFilterTabs(int totalCount, int pendingCount, int paidCount) {
     return GlassCard(
       padding: const EdgeInsets.all(4),
       child: Row(
         children: [
           SegmentTab(
             label: 'Todas',
-            count: 10,
+            count: totalCount,
             active: filter == BillFilter.todas,
             onClick: () => setState(() => filter = BillFilter.todas),
           ),
           SegmentTab(
             label: 'Pendentes',
-            count: 7,
+            count: pendingCount,
             active: filter == BillFilter.pendentes,
             onClick: () => setState(() => filter = BillFilter.pendentes),
           ),
           SegmentTab(
             label: 'Pagas',
-            count: 3,
+            count: paidCount,
             active: filter == BillFilter.pagas,
             onClick: () => setState(() => filter = BillFilter.pagas),
           ),
@@ -405,6 +424,16 @@ class _BillsScreenState extends ConsumerState<BillsScreen> {
         );
       }
     }
+  }
+
+  void _showNewEntrySheet({required bool isIncome}) {
+    setState(() => isFabOpen = false);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => NewEntrySheet(isIncome: isIncome),
+    );
   }
 
   String _formatBRL(double value) {

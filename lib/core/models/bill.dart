@@ -4,6 +4,7 @@ enum BillStatus { pendente, paga, atrasada }
 class Bill {
   final String id;
   final String userId;
+  final String? walletId;
   final String categoryId;
   final String title;
   final double amount;
@@ -19,6 +20,7 @@ class Bill {
   const Bill({
     required this.id,
     required this.userId,
+    this.walletId,
     required this.categoryId,
     required this.title,
     required this.amount,
@@ -36,6 +38,7 @@ class Bill {
     return Bill(
       id: json['id'] as String,
       userId: json['user_id'] as String,
+      walletId: json['wallet_id'] as String?,
       categoryId: json['category_id'] as String,
       title: json['title'] as String,
       amount: (json['amount'] as num).toDouble(),
@@ -62,6 +65,7 @@ class Bill {
     return {
       'id': id,
       'user_id': userId,
+      'wallet_id': walletId,
       'category_id': categoryId,
       'title': title,
       'amount': amount,
@@ -79,6 +83,7 @@ class Bill {
   Bill copyWith({
     String? id,
     String? userId,
+    String? walletId,
     String? categoryId,
     String? title,
     double? amount,
@@ -94,6 +99,7 @@ class Bill {
     return Bill(
       id: id ?? this.id,
       userId: userId ?? this.userId,
+      walletId: walletId ?? this.walletId,
       categoryId: categoryId ?? this.categoryId,
       title: title ?? this.title,
       amount: amount ?? this.amount,

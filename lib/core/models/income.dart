@@ -1,6 +1,7 @@
 class Income {
   final String id;
   final String userId;
+  final String? walletId;
   final String title;
   final double amount;
   final bool recurring;
@@ -11,6 +12,7 @@ class Income {
   const Income({
     required this.id,
     required this.userId,
+    this.walletId,
     required this.title,
     required this.amount,
     this.recurring = false,
@@ -23,6 +25,7 @@ class Income {
     return Income(
       id: json['id'] as String,
       userId: json['user_id'] as String,
+      walletId: json['wallet_id'] as String?,
       title: json['title'] as String,
       amount: (json['amount'] as num).toDouble(),
       recurring: json['recurring'] as bool? ?? false,
@@ -36,6 +39,7 @@ class Income {
     return {
       'id': id,
       'user_id': userId,
+      'wallet_id': walletId,
       'title': title,
       'amount': amount,
       'recurring': recurring,
@@ -48,6 +52,7 @@ class Income {
   Income copyWith({
     String? id,
     String? userId,
+    String? walletId,
     String? title,
     double? amount,
     bool? recurring,
@@ -58,6 +63,7 @@ class Income {
     return Income(
       id: id ?? this.id,
       userId: userId ?? this.userId,
+      walletId: walletId ?? this.walletId,
       title: title ?? this.title,
       amount: amount ?? this.amount,
       recurring: recurring ?? this.recurring,
